@@ -276,6 +276,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
         Salvar arquivo
       </button>
+      <button class="btn ghost" id="discardBtn" hidden style="margin-top:8px">Descartar e recomeçar</button>
       <p class="err" id="recvErr"></p>
       <p class="hint"><b>iPhone não foca de perto</b> (limitação do Safari). Segure <b>mais longe</b>, uns 30–40 cm, e use o <b>Zoom</b> acima pra aproximar — assim ele foca. Tela transmissora com brilho no máximo. Ele preenche os blocos que faltam a cada passada, não precisa pegar tudo de primeira.</p>
     </div>
@@ -484,7 +485,7 @@
   var video=$('video'), scanCanvas=$('scanCanvas'), sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
   var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0, dupCount=0, recvGz=0, recvOrig=0, recvStart=0;
   var readTimes=[]; // timestamps de leituras, pra medir QR/s do aparelho
-  var hitTimer=null;
+  var hitTimer=null, recvType='', saveDirty=false, DB=null;
   var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
   var camSelect=$('camSelect'), reticle=$('reticle');
 
@@ -627,7 +628,7 @@
       try{ meta=JSON.parse(new TextDecoder().decode(payload)); }catch(e){ return; }
       if(meta.name!==recvName || meta.size!==recvSize){
         recvName=meta.name; recvSize=meta.size; recvTotal=meta.total; recvChunk=meta.chunk;
-        recvGz=meta.gz||0; recvOrig=meta.orig||meta.size;
+        recvGz=meta.gz||0; recvOrig=meta.orig||meta.size; recvType=meta.type||'';
         recvBuf=new Uint8Array(recvSize); recvSet=new Set();
         $('rName').textContent=recvName;
         $('rSize').textContent=fmtBytes(recvOrig)+(recvGz?' (zip '+fmtBytes(recvSize)+')':'');
@@ -663,6 +664,7 @@
       $('recvRate').innerHTML=rate.toFixed(1)+' blocos/s · '+kbs.toFixed(1)+' KB/s · falta <b>~'+fmtTime(eta)+'</b>';
     }
     updateMissing();
+    saveDirty=true;
     beep(880,0.03); buzz(18);
     if(got===recvTotal){ complete(); }
   }
@@ -674,8 +676,9 @@
     $('recvPlaceholder').style.display='block';
     $('recvPlaceholder').innerHTML='<div class="big" aria-hidden="true">✓</div>Arquivo completo — toque em <b>Salvar arquivo</b>';
     setRecvState('done','Completo');
-    $('saveBtn').disabled=false;
+    $('saveBtn').disabled=false; $('discardBtn').hidden=false;
     if(recvStart){ $('recvRate').hidden=false; $('recvRate').innerHTML='✓ completo em <b>'+fmtTime((Date.now()-recvStart)/1000)+'</b>'; }
+    saveDirty=false; saveSession();
     beep(1320,0.18); buzz([40,40,90]);
   }
 
@@ -690,6 +693,66 @@
     document.body.appendChild(a); a.click();
     setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1500);
   };
+
+  /* ===== Persistência (IndexedDB): retoma o recebimento se recarregar/cair ===== */
+  function idb(){ return new Promise(function(res){
+    if(DB) return res(DB);
+    try{ var r=indexedDB.open('farol',1);
+      r.onupgradeneeded=function(){ r.result.createObjectStore('kv'); };
+      r.onsuccess=function(){ DB=r.result; res(DB); };
+      r.onerror=function(){ res(null); };
+    }catch(e){ res(null); }
+  }); }
+  function idbPut(k,v){ return idb().then(function(db){ if(!db)return; return new Promise(function(res){ try{ var t=db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=function(){res()}; t.onerror=function(){res()}; }catch(e){res()} }); }); }
+  function idbGet(k){ return idb().then(function(db){ if(!db)return null; return new Promise(function(res){ try{ var t=db.transaction('kv','readonly'); var q=t.objectStore('kv').get(k); q.onsuccess=function(){res(q.result||null)}; q.onerror=function(){res(null)}; }catch(e){res(null)} }); }); }
+  function idbDel(k){ return idb().then(function(db){ if(!db)return; return new Promise(function(res){ try{ var t=db.transaction('kv','readwrite'); t.objectStore('kv').delete(k); t.oncomplete=function(){res()}; t.onerror=function(){res()}; }catch(e){res()} }); }); }
+
+  function saveSession(){
+    if(!recvBuf || !recvSet) return;
+    idbPut('session',{ name:recvName,type:recvType,size:recvSize,total:recvTotal,chunk:recvChunk,
+      gz:recvGz,orig:recvOrig, buf:recvBuf, got:Array.from(recvSet) });
+  }
+  setInterval(function(){ if(saveDirty){ saveDirty=false; saveSession(); } }, 2000);
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden') saveSession(); });
+  window.addEventListener('pagehide', saveSession);
+
+  function paintProgress(){
+    progCanvas.width=recvTotal; pctx.clearRect(0,0,recvTotal,1);
+    var col=getComputedStyle(document.documentElement).getPropertyValue('--ok').trim()||'#15803D';
+    pctx.fillStyle=col; recvSet.forEach(function(i){ pctx.fillRect(i-1,0,1,1); });
+  }
+  function restoreSession(){
+    idbGet('session').then(function(s){
+      if(!s || !s.buf || !s.got || !s.got.length) return;
+      recvName=s.name; recvType=s.type||''; recvSize=s.size; recvTotal=s.total; recvChunk=s.chunk;
+      recvGz=s.gz||0; recvOrig=s.orig||s.size;
+      recvBuf=(s.buf instanceof Uint8Array)?s.buf:new Uint8Array(s.buf);
+      recvSet=new Set(s.got);
+      $('rName').textContent=recvName;
+      $('rSize').textContent=fmtBytes(recvOrig)+(recvGz?' (zip '+fmtBytes(recvSize)+')':'');
+      $('rType').textContent=recvType||'arquivo'; $('rBlocks').textContent=recvTotal;
+      $('recvMeta').classList.add('show'); $('syncBanner').style.display='none';
+      paintProgress();
+      var got=recvSet.size;
+      $('recvCount').textContent=got+' / '+recvTotal; $('recvLeft').textContent=(recvTotal-got);
+      $('recvPct').textContent=Math.round(got/recvTotal*100)+'%';
+      dupCount=0; $('recvDup').textContent='0'; updateMissing();
+      $('discardBtn').hidden=false;
+      if(got>=recvTotal){ setRecvState('done','Completo'); $('saveBtn').disabled=false; }
+      else { setRecvState('rx','Retomado '+got+'/'+recvTotal+' — ligue a câmera p/ continuar'); }
+      if(!isMobile) setMode(false); // mostra a aba Receber com o progresso retomado
+    });
+  }
+  $('discardBtn').onclick=function(){
+    idbDel('session');
+    recvBuf=null; recvSet=null; recvTotal=0; recvName=''; recvSize=0; recvGz=0; recvStart=0; dupCount=0;
+    $('recvMeta').classList.remove('show'); $('syncBanner').style.display='none';
+    $('recvCount').textContent='—'; $('recvLeft').textContent='—'; $('recvDup').textContent='0';
+    $('recvPct').textContent='0%'; $('recvRate').hidden=true; $('recvMissing').hidden=true;
+    progCanvas.width=100; pctx.clearRect(0,0,100,1);
+    $('saveBtn').disabled=true; $('discardBtn').hidden=true; setRecvState('','Aguardando');
+  };
+  restoreSession();
 
   // tudo definido: no celular, abre já na aba Receber (câmera)
   if(isMobile) setMode(false);
