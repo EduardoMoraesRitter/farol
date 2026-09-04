@@ -291,6 +291,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 <script type="module">
   // Detector robusto (ZXing/WASM) — funciona no Safari do iPhone, onde não há BarcodeDetector nativo
   import { BarcodeDetector as ZX } from "https://cdn.jsdelivr.net/npm/barcode-detector@2/dist/es/pure.min.js";
@@ -326,7 +327,7 @@
   var isMobile=(window.matchMedia&&window.matchMedia('(max-width:720px)').matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
 
   /* ================= SENDER ================= */
-  var fileBytes=null, fileName='', fileType='', frames=null, sequence=null, playTimer=null, seqPos=0;
+  var fileBytes=null, fileName='', fileType='', origSize=0, frames=null, sequence=null, playTimer=null, seqPos=0;
   var chunkEl=$('chunk'), fpsEl=$('fps'), chunkVal=$('chunkVal'), fpsVal=$('fpsVal');
   var playBtn=$('playBtn'), playLbl=$('playLbl'), qrImg=$('qrImg'), sendPlaceholder=$('sendPlaceholder');
 
@@ -346,10 +347,15 @@
     fileName=f.name; fileType=f.type||'';
     var rd=new FileReader();
     rd.onload=function(ev){
-      fileBytes=new Uint8Array(ev.target.result);
+      var raw=new Uint8Array(ev.target.result);
+      origSize=raw.length;
+      // comprime no próprio navegador (gzip) — arquivo grande cabe em menos QR
+      try{ fileBytes=window.pako?pako.gzip(raw):raw; }catch(e){ fileBytes=raw; }
       $('fileChip').hidden=false;
       $('fileName').textContent=fileName;
-      $('fileMeta').textContent=fmtBytes(fileBytes.length);
+      $('fileMeta').textContent = (fileBytes.length<origSize)
+        ? fmtBytes(origSize)+' → '+fmtBytes(fileBytes.length)+' (zip)'
+        : fmtBytes(origSize);
       frames=null; buildFrames();
       playBtn.disabled=false;
       renderFrame(0); setSendState('','Pronto');
@@ -369,7 +375,7 @@
   function buildFrames(){
     var chunk=parseInt(chunkEl.value,10);
     var total=Math.max(1,Math.ceil(fileBytes.length/chunk));
-    var meta={name:fileName,type:fileType,size:fileBytes.length,total:total,chunk:chunk};
+    var meta={name:fileName,type:fileType,size:fileBytes.length,total:total,chunk:chunk,gz:(fileBytes.length<origSize?1:0),orig:origSize};
     var metaBytes=new TextEncoder().encode(JSON.stringify(meta));
     frames=new Array(total+1);
     frames[0]=qrDataUrl('0|'+bytesToB64(metaBytes));
@@ -420,7 +426,7 @@
 
   /* ================= RECEIVER ================= */
   var video=$('video'), scanCanvas=$('scanCanvas'), sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
-  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0, dupCount=0;
+  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0, dupCount=0, recvGz=0, recvOrig=0;
   var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
   var camSelect=$('camSelect'), reticle=$('reticle');
 
@@ -543,8 +549,10 @@
       try{ meta=JSON.parse(new TextDecoder().decode(payload)); }catch(e){ return; }
       if(meta.name!==recvName || meta.size!==recvSize){
         recvName=meta.name; recvSize=meta.size; recvTotal=meta.total; recvChunk=meta.chunk;
+        recvGz=meta.gz||0; recvOrig=meta.orig||meta.size;
         recvBuf=new Uint8Array(recvSize); recvSet=new Set();
-        $('rName').textContent=recvName; $('rSize').textContent=fmtBytes(recvSize);
+        $('rName').textContent=recvName;
+        $('rSize').textContent=fmtBytes(recvOrig)+(recvGz?' (zip '+fmtBytes(recvSize)+')':'');
         $('rType').textContent=meta.type||'arquivo'; $('rBlocks').textContent=recvTotal;
         $('syncBanner').style.display='none';
         $('recvMeta').classList.add('show');
@@ -585,7 +593,9 @@
 
   $('saveBtn').onclick=function(){
     if(!recvBuf) return;
-    var blob=new Blob([recvBuf], {type:'application/octet-stream'});
+    var out=recvBuf;
+    if(recvGz){ try{ out=pako.ungzip(recvBuf); }catch(e){ alert('Falha ao descomprimir o arquivo.'); return; } }
+    var blob=new Blob([out], {type:'application/octet-stream'});
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');
     a.href=url; a.download=recvName||'arquivo';
