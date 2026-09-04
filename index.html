@@ -250,6 +250,7 @@
       </div>
       <div class="meters">
         <div class="meter state" id="recvStateM"><div class="k">Estado</div><div class="v small" id="recvState">Aguardando</div></div>
+        <div class="meter"><div class="k">QR vistos</div><div class="v" id="recvSeen">0</div></div>
         <div class="meter"><div class="k">Recebidos</div><div class="v" id="recvCount">—</div></div>
       </div>
     </div>
@@ -320,7 +321,7 @@
     var qr=qrcode(0, EC);
     qr.addData(bytes);
     qr.make();
-    return qr.createDataURL(4,10);
+    return qr.createDataURL(6); // cellSize 6px, quiet zone padrão (=24px) p/ leitura melhor
   }
   function makeFrame(index, payload){
     var buf=new Uint8Array(HEADER+payload.length);
@@ -374,7 +375,7 @@
 
   /* ================= RECEIVER ================= */
   var video=$('video'), scanCanvas=$('scanCanvas'), sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
-  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0;
+  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0;
   var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
   var camSelect=$('camSelect'), reticle=$('reticle');
 
@@ -395,6 +396,7 @@
       stream=s; video.srcObject=s; video.style.display='block';
       $('recvPlaceholder').style.display='none';
       video.play();
+      codesSeen=0; $('recvSeen').textContent='0';
       setRecvState('rx','Procurando…');
       return navigator.mediaDevices.enumerateDevices();
     }).then(function(devs){
@@ -426,9 +428,11 @@
       sctx.drawImage(video,0,0,w,h);
       var img=sctx.getImageData(0,0,w,h);
       var code=jsQR(img.data,w,h,{inversionAttempts:'dontInvert'});
-      if(code && code.binaryData && code.binaryData.length>HEADER){
+      if(code){
+        codesSeen++; $('recvSeen').textContent=codesSeen;
+        if(codesSeen===1 && !recvBuf) setRecvState('rx','Lendo…');
         reticle.classList.add('hit');
-        handlePacket(code.binaryData);
+        if(code.binaryData && code.binaryData.length>HEADER) handlePacket(code.binaryData);
       } else {
         reticle.classList.remove('hit');
       }
