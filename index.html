@@ -260,6 +260,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script type="module">
+  // Detector robusto (ZXing/WASM) — funciona no Safari do iPhone, onde não há BarcodeDetector nativo
+  import { BarcodeDetector as ZX } from "https://cdn.jsdelivr.net/npm/barcode-detector@2/dist/es/pure.min.js";
+  window.__ZX = ZX;
+</script>
 <script>
 (function(){
   "use strict";
@@ -378,9 +383,15 @@
   var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
   var camSelect=$('camSelect'), reticle=$('reticle');
 
-  // Detector: nativo (mesmo motor do app de câmera) com fallback pro jsQR
-  var detector=null, useNative=('BarcodeDetector' in window), detecting=false, engineName='jsQR';
-  if(useNative){ try{ detector=new BarcodeDetector({formats:['qr_code']}); engineName='nativo'; }catch(e){ useNative=false; } }
+  // Detector: nativo (Android) -> ZXing/WASM (iPhone, PC) -> jsQR
+  var detector=null, detecting=false, detectorFailed=false, engineName='jsQR', actx=null;
+  function pickDetector(){
+    detector=null; engineName='jsQR';
+    if(window.BarcodeDetector){ try{ detector=new window.BarcodeDetector({formats:['qr_code']}); engineName='nativo'; return; }catch(e){} }
+    if(window.__ZX){ try{ detector=new window.__ZX({formats:['qr_code']}); engineName='zxing'; return; }catch(e){} }
+  }
+  function beep(freq,dur){ try{ if(!actx) return; var o=actx.createOscillator(),g=actx.createGain(); o.type='sine'; o.frequency.value=freq; g.gain.value=0.06; o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime+dur);}catch(e){} }
+  function buzz(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
 
   function setRecvState(cls,txt){ var m=$('recvStateM'); m.className='meter state'+(cls?' '+cls:''); $('recvState').textContent=txt; }
   function showErr(t){ var e=$('recvErr'); if(t){e.textContent=t;e.classList.add('show');} else e.classList.remove('show'); }
@@ -394,7 +405,11 @@
     }
     showErr('');
     stopCamera();
-    var constraints=deviceId?{video:{deviceId:{exact:deviceId}}}:{video:{facingMode:{ideal:'environment'}}};
+    try{ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch(e){}
+    detectorFailed=false; pickDetector();
+    var v=deviceId?{deviceId:{exact:deviceId}}:{facingMode:{ideal:'environment'}};
+    v.width={ideal:1920}; v.height={ideal:1080};
+    var constraints={video:v};
     navigator.mediaDevices.getUserMedia(constraints).then(function(s){
       stream=s; video.srcObject=s; video.style.display='block';
       $('recvPlaceholder').style.display='none';
@@ -429,15 +444,16 @@
   }
   function scanLoop(){
     if(!scanning) return;
+    if(!detector && !detectorFailed && (window.__ZX||window.BarcodeDetector)) pickDetector();
     if(video.readyState===video.HAVE_ENOUGH_DATA){
-      if(useNative){
+      if(detector){
         if(!detecting){
           detecting=true;
           detector.detect(video).then(function(codes){
             detecting=false;
             if(codes && codes.length){ gotCode(codes[0].rawValue); }
             else reticle.classList.remove('hit');
-          }).catch(function(){ detecting=false; useNative=false; detector=null; engineName='jsQR'; });
+          }).catch(function(){ detecting=false; detectorFailed=true; detector=null; engineName='jsQR'; });
         }
       } else {
         var vw=video.videoWidth, vh=video.videoHeight;
@@ -486,6 +502,7 @@
     var got=recvSet.size;
     $('recvCount').textContent=got+' / '+recvTotal;
     $('recvPct').textContent=Math.round(got/recvTotal*100)+'%';
+    beep(880,0.03); buzz(18);
     if(got===recvTotal){ complete(); }
   }
 
@@ -497,6 +514,7 @@
     $('recvPlaceholder').innerHTML='<div class="big" aria-hidden="true">✓</div>Arquivo completo — toque em <b>Salvar arquivo</b>';
     setRecvState('done','Completo');
     $('saveBtn').disabled=false;
+    beep(1320,0.18); buzz([40,40,90]);
   }
 
   $('saveBtn').onclick=function(){
