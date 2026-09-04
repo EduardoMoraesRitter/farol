@@ -212,10 +212,17 @@
         </label>
       </div>
 
-      <button class="btn" id="playBtn" disabled style="margin-top:4px">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        <span id="playLbl">Transmitir</span>
-      </button>
+      <label class="field" id="startWrap" hidden style="margin-top:4px">
+        <span class="lab">A partir do bloco <span class="val" id="startBlockVal">1 / 1</span></span>
+        <input type="range" id="startBlock" min="1" max="1" step="1" value="1">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn" id="playBtn" disabled>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <span id="playLbl">Transmitir</span>
+        </button>
+        <button class="btn ghost" id="resetBtn" disabled style="width:auto;flex:0 0 auto;padding:12px 15px" title="Recomeçar do bloco 1">↺ Do zero</button>
+      </div>
 
       <p class="hint">Quanto <b>maior</b> bytes por quadro, mais rápido — mas o QR fica denso e a câmera pode não ler. Se o outro lado usar webcam de PC, baixe pra ~200 e reduza os quadros.</p>
     </div>
@@ -327,7 +334,7 @@
   var isMobile=(window.matchMedia&&window.matchMedia('(max-width:720px)').matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
 
   /* ================= SENDER ================= */
-  var fileBytes=null, fileName='', fileType='', origSize=0, frames=null, sequence=null, playTimer=null, seqPos=0;
+  var fileBytes=null, fileName='', fileType='', origSize=0, frames=null, sequence=null, playTimer=null, seqPos=0, startBlock=1;
   var chunkEl=$('chunk'), fpsEl=$('fps'), chunkVal=$('chunkVal'), fpsVal=$('fpsVal');
   var playBtn=$('playBtn'), playLbl=$('playLbl'), qrImg=$('qrImg'), sendPlaceholder=$('sendPlaceholder');
 
@@ -357,7 +364,7 @@
         ? fmtBytes(origSize)+' → '+fmtBytes(fileBytes.length)+' (zip)'
         : fmtBytes(origSize);
       frames=null; buildFrames();
-      playBtn.disabled=false;
+      playBtn.disabled=false; $('resetBtn').disabled=false;
       renderFrame(0); setSendState('','Pronto');
       sendPlaceholder.style.display='none'; qrImg.style.display='block';
     };
@@ -384,9 +391,17 @@
       var part=fileBytes.subarray(off, Math.min(off+chunk, fileBytes.length));
       frames[i]=qrDataUrl(i+'|'+bytesToB64(part));
     }
-    sequence=[0];
-    for(var b=1;b<=total;b++){ if(b>1 && (b-1)%12===0) sequence.push(0); sequence.push(b); }
     $('sendBlocks').textContent=total;
+    var sb=$('startBlock'); sb.min=1; sb.max=total; sb.value=1; startBlock=1;
+    $('startBlockVal').textContent='1 / '+total; $('startWrap').hidden=false;
+    rebuildSequence();
+  }
+  function rebuildSequence(){
+    if(!frames) return;
+    var total=frames.length-1;
+    sequence=[0]; // sempre reenvia o metadados (sync) na frente
+    for(var b=startBlock;b<=total;b++){ if(b>startBlock && (b-startBlock)%12===0) sequence.push(0); sequence.push(b); }
+    seqPos=0;
   }
   function renderFrame(idx){
     if(!frames) return;
@@ -395,7 +410,7 @@
   }
   function startPlay(){
     if(!frames) return;
-    seqPos=0;
+    if(seqPos>=sequence.length) seqPos=0; // retoma de onde parou
     var interval=1000/parseInt(fpsEl.value,10);
     playTimer=setInterval(function(){
       renderFrame(sequence[seqPos]);
@@ -415,6 +430,16 @@
     var m=$('sendStateM'); m.className='meter state'+(cls?' '+cls:''); $('sendState').textContent=txt;
   }
   playBtn.onclick=function(){ if(playTimer) stopPlay(); else startPlay(); };
+  $('startBlock').oninput=function(e){
+    startBlock=parseInt(e.target.value,10)||1;
+    $('startBlockVal').textContent=startBlock+' / '+(frames?frames.length-1:1);
+    rebuildSequence(); if(!playTimer) renderFrame(sequence[0]);
+  };
+  $('resetBtn').onclick=function(){
+    startBlock=1; $('startBlock').value=1;
+    $('startBlockVal').textContent='1 / '+(frames?frames.length-1:1);
+    rebuildSequence(); renderFrame(sequence[0]);
+  };
 
   // QR de sincronização (mostrado antes de escolher arquivo)
   function showSyncQR(){
