@@ -70,7 +70,7 @@
     header{margin-bottom:2px}
     .tag{display:none}                     /* economiza espaço no topo */
     .grid{grid-template-columns:1fr;gap:12px}
-    #sendView .stagePanel{order:-1}       /* no Enviar, o QR vem primeiro */
+    .stagePanel{order:-1}                 /* câmera/QR em primeiro no celular */
     .panel-pad{padding:14px}
     .modes{width:100%;margin-bottom:14px}
     .modes button{flex:1;justify-content:center;padding:11px 8px}
@@ -128,6 +128,12 @@
   .reticle{position:absolute;inset:12%;border:2px solid var(--accent);border-radius:12px;
     opacity:0;pointer-events:none;transition:opacity .12s}
   .reticle.hit{opacity:.9}
+  .zoomOverlay{position:absolute;left:10px;right:10px;bottom:10px;display:flex;align-items:center;gap:10px;
+    background:rgba(8,12,16,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    border-radius:11px;padding:9px 12px;z-index:3}
+  .zoomOverlay input[type=range]{flex:1;margin:0;accent-color:#fff}
+  .zoomOverlay .zlab{color:#fff;font-size:.78rem;font-weight:600;white-space:nowrap;font-family:var(--mono)}
+  [hidden]{display:none!important}
 
   .meters{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
   .meter{flex:1;min-width:88px;background:var(--surface);border:1px solid var(--border);
@@ -239,10 +245,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
         Ligar câmera
       </button>
-      <label class="field" id="zoomWrap" hidden style="margin-top:12px">
-        <span class="lab">Zoom (aproxima sem chegar perto) <span class="val" id="zoomVal">1×</span></span>
-        <input type="range" id="zoom" min="1" max="5" step="0.1" value="1">
-      </label>
       <div class="filemeta" id="syncBanner" style="background:var(--ok-soft);border-color:var(--ok)">
         <div class="row"><span class="k">Sincronização</span><span class="v" id="syncTxt" style="color:var(--ok)">—</span></div>
       </div>
@@ -265,7 +267,12 @@
         <video id="video" playsinline muted></video>
         <canvas id="scanCanvas"></canvas>
         <div class="reticle" id="reticle"></div>
-        <div class="placeholder" id="recvPlaceholder"><div class="big" aria-hidden="true">🎥</div>Ligue a câmera e mire na tela transmissora</div>
+        <div class="placeholder" id="recvPlaceholder" style="cursor:pointer"><div class="big" aria-hidden="true">🎥</div>Toque para ligar a câmera</div>
+        <div class="zoomOverlay" id="zoomWrap" hidden>
+          <span class="zlab">Zoom</span>
+          <input type="range" id="zoom" min="1" max="5" step="0.1" value="1" aria-label="Zoom">
+          <span class="zlab" id="zoomVal">1×</span>
+        </div>
       </div>
       <div class="progwrap">
         <div class="progtop"><span class="lab">Blocos recebidos</span><span class="pct" id="recvPct">0%</span></div>
@@ -430,6 +437,7 @@
   function showErr(t){ var e=$('recvErr'); if(t){e.textContent=t;e.classList.add('show');} else e.classList.remove('show'); }
 
   $('startCam').onclick=function(){ startCamera(camSelect.value&&camSelect.value.length>20?camSelect.value:null); };
+  $('recvPlaceholder').onclick=function(){ if(!stream) $('startCam').click(); };
   camSelect.onchange=function(){ if(stream) startCamera(camSelect.value); };
 
   function startCamera(deviceId){
