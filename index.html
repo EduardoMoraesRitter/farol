@@ -264,7 +264,11 @@
 (function(){
   "use strict";
   var $=function(id){return document.getElementById(id)};
-  var HEADER=4, EC='M';
+  var EC='M';
+
+  // base64 <-> bytes (payload viaja como TEXTO, p/ detector nativo ler perfeito)
+  function bytesToB64(bytes){ var s=''; for(var i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return btoa(s); }
+  function b64ToBytes(b64){ var s=atob(b64); var a=new Uint8Array(s.length); for(var i=0;i<s.length;i++) a[i]=s.charCodeAt(i); return a; }
 
   function fmtBytes(n){
     if(n<1024)return n+' B';
@@ -316,18 +320,13 @@
     rd.readAsArrayBuffer(f);
   }
 
-  function qrDataUrl(bytes){
-    qrcode.stringToBytes=function(s){return s;}; // raw bytes straight into byte mode
+  // texto ASCII (base64 + dígitos + '|') -> QR em modo byte
+  qrcode.stringToBytes=function(s){ var b=[]; for(var i=0;i<s.length;i++) b.push(s.charCodeAt(i)&0xff); return b; };
+  function qrDataUrl(text){
     var qr=qrcode(0, EC);
-    qr.addData(bytes);
+    qr.addData(text);
     qr.make();
-    return qr.createDataURL(6); // cellSize 6px, quiet zone padrão (=24px) p/ leitura melhor
-  }
-  function makeFrame(index, payload){
-    var buf=new Uint8Array(HEADER+payload.length);
-    new DataView(buf.buffer).setUint32(0,index,true);
-    buf.set(payload,HEADER);
-    return buf;
+    return qr.createDataURL(6); // cellSize 6px, quiet zone padrão (=24px)
   }
   function buildFrames(){
     var chunk=parseInt(chunkEl.value,10);
@@ -335,11 +334,11 @@
     var meta={name:fileName,size:fileBytes.length,total:total,chunk:chunk};
     var metaBytes=new TextEncoder().encode(JSON.stringify(meta));
     frames=new Array(total+1);
-    frames[0]=qrDataUrl(makeFrame(0,metaBytes));
+    frames[0]=qrDataUrl('0|'+bytesToB64(metaBytes));
     for(var i=1;i<=total;i++){
       var off=(i-1)*chunk;
       var part=fileBytes.subarray(off, Math.min(off+chunk, fileBytes.length));
-      frames[i]=qrDataUrl(makeFrame(i,part));
+      frames[i]=qrDataUrl(i+'|'+bytesToB64(part));
     }
     sequence=[0];
     for(var b=1;b<=total;b++){ if(b>1 && (b-1)%12===0) sequence.push(0); sequence.push(b); }
@@ -379,6 +378,10 @@
   var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
   var camSelect=$('camSelect'), reticle=$('reticle');
 
+  // Detector: nativo (mesmo motor do app de câmera) com fallback pro jsQR
+  var detector=null, useNative=('BarcodeDetector' in window), detecting=false, engineName='jsQR';
+  if(useNative){ try{ detector=new BarcodeDetector({formats:['qr_code']}); engineName='nativo'; }catch(e){ useNative=false; } }
+
   function setRecvState(cls,txt){ var m=$('recvStateM'); m.className='meter state'+(cls?' '+cls:''); $('recvState').textContent=txt; }
   function showErr(t){ var e=$('recvErr'); if(t){e.textContent=t;e.classList.add('show');} else e.classList.remove('show'); }
 
@@ -397,7 +400,7 @@
       $('recvPlaceholder').style.display='none';
       video.play();
       codesSeen=0; $('recvSeen').textContent='0';
-      setRecvState('rx','Procurando…');
+      setRecvState('rx','Procurando… ('+engineName+')');
       return navigator.mediaDevices.enumerateDevices();
     }).then(function(devs){
       var cams=devs.filter(function(d){return d.kind==='videoinput'});
@@ -418,32 +421,46 @@
     video.style.display='none';
   }
 
+  function gotCode(text){
+    codesSeen++; $('recvSeen').textContent=codesSeen;
+    if(!recvBuf) setRecvState('rx','Lendo… ('+engineName+')');
+    reticle.classList.add('hit');
+    handlePacket(text);
+  }
   function scanLoop(){
     if(!scanning) return;
     if(video.readyState===video.HAVE_ENOUGH_DATA){
-      var vw=video.videoWidth, vh=video.videoHeight;
-      var scale=Math.min(1, 900/Math.max(vw,vh));
-      var w=Math.round(vw*scale), h=Math.round(vh*scale);
-      if(scanCanvas.width!==w){ scanCanvas.width=w; scanCanvas.height=h; }
-      sctx.drawImage(video,0,0,w,h);
-      var img=sctx.getImageData(0,0,w,h);
-      var code=jsQR(img.data,w,h,{inversionAttempts:'dontInvert'});
-      if(code){
-        codesSeen++; $('recvSeen').textContent=codesSeen;
-        if(codesSeen===1 && !recvBuf) setRecvState('rx','Lendo…');
-        reticle.classList.add('hit');
-        if(code.binaryData && code.binaryData.length>HEADER) handlePacket(code.binaryData);
+      if(useNative){
+        if(!detecting){
+          detecting=true;
+          detector.detect(video).then(function(codes){
+            detecting=false;
+            if(codes && codes.length){ gotCode(codes[0].rawValue); }
+            else reticle.classList.remove('hit');
+          }).catch(function(){ detecting=false; useNative=false; detector=null; engineName='jsQR'; });
+        }
       } else {
-        reticle.classList.remove('hit');
+        var vw=video.videoWidth, vh=video.videoHeight;
+        var scale=Math.min(1, 900/Math.max(vw,vh));
+        var w=Math.round(vw*scale), h=Math.round(vh*scale);
+        if(scanCanvas.width!==w){ scanCanvas.width=w; scanCanvas.height=h; }
+        sctx.drawImage(video,0,0,w,h);
+        var img=sctx.getImageData(0,0,w,h);
+        var code=jsQR(img.data,w,h,{inversionAttempts:'attemptBoth'});
+        if(code && code.data){ gotCode(code.data); }
+        else reticle.classList.remove('hit');
       }
     }
     requestAnimationFrame(scanLoop);
   }
 
-  function handlePacket(bin){
-    var arr=Uint8Array.from(bin);
-    var index=new DataView(arr.buffer,arr.byteOffset,arr.byteLength).getUint32(0,true);
-    var payload=arr.subarray(HEADER);
+  function handlePacket(text){
+    var p=text.indexOf('|');
+    if(p<0) return;
+    var index=parseInt(text.slice(0,p),10);
+    if(isNaN(index)) return;
+    var payload;
+    try{ payload=b64ToBytes(text.slice(p+1)); }catch(e){ return; }
     if(index===0){
       var meta;
       try{ meta=JSON.parse(new TextDecoder().decode(payload)); }catch(e){ return; }
