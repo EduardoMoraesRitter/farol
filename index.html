@@ -313,9 +313,8 @@
   }
   mSend.onclick=function(){setMode(true)};
   mRecv.onclick=function(){setMode(false)};
-  // No celular, já abre na câmera (Receber) — é o uso mais comum no mobile
+  // No celular, já abre na câmera (Receber) — aplicado no fim, quando tudo já existe
   var isMobile=(window.matchMedia&&window.matchMedia('(max-width:720px)').matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
-  if(isMobile) setMode(false);
 
   /* ================= SENDER ================= */
   var fileBytes=null, fileName='', fileType='', frames=null, sequence=null, playTimer=null, seqPos=0;
@@ -580,6 +579,9 @@
     document.body.appendChild(a); a.click();
     setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1500);
   };
+
+  // tudo definido: no celular, abre já na aba Receber (câmera)
+  if(isMobile) setMode(false);
 })();
 </script>
 </body>
