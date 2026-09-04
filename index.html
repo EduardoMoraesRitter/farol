@@ -152,6 +152,9 @@
   .progtop .pct{font-family:var(--mono);font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
   #progCanvas{width:100%;height:14px;border-radius:7px;image-rendering:pixelated;
     background:var(--surface-2);border:1px solid var(--border);display:block}
+  .progsub{margin-top:7px;font-size:.78rem;color:var(--muted);font-family:var(--mono);
+    font-variant-numeric:tabular-nums}
+  .progsub b{color:var(--accent);font-weight:600}
 
   .filemeta{margin-top:14px;padding:13px;background:var(--accent-soft);border-radius:11px;
     border:1px solid var(--border);display:none}
@@ -284,6 +287,7 @@
       <div class="progwrap">
         <div class="progtop"><span class="lab">Blocos recebidos</span><span class="pct" id="recvPct">0%</span></div>
         <canvas id="progCanvas" height="1" width="100"></canvas>
+        <div class="progsub" id="recvRate" hidden></div>
       </div>
       <div class="meters">
         <div class="meter state" id="recvStateM"><div class="k">Estado</div><div class="v small" id="recvState">Aguardando</div></div>
@@ -319,6 +323,8 @@
     if(n<1048576)return (n/1024).toFixed(1)+' KB';
     return (n/1048576).toFixed(2)+' MB';
   }
+  function fmtTime(s){ s=Math.max(0,Math.round(s)); if(s<60) return s+'s';
+    var m=Math.floor(s/60); return m+'m'+String(s%60).padStart(2,'0')+'s'; }
 
   /* ---------- mode switch ---------- */
   var mSend=$('mSend'), mRecv=$('mRecv'), sendView=$('sendView'), recvView=$('recvView');
@@ -451,7 +457,7 @@
 
   /* ================= RECEIVER ================= */
   var video=$('video'), scanCanvas=$('scanCanvas'), sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
-  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0, dupCount=0, recvGz=0, recvOrig=0;
+  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0, dupCount=0, recvGz=0, recvOrig=0, recvStart=0;
   var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
   var camSelect=$('camSelect'), reticle=$('reticle');
 
@@ -583,6 +589,7 @@
         $('recvMeta').classList.add('show');
         $('recvCount').textContent='0 / '+recvTotal;
         $('recvLeft').textContent=recvTotal; dupCount=0; $('recvDup').textContent='0';
+        recvStart=0; $('recvRate').hidden=true;
         progCanvas.width=recvTotal; pctx.clearRect(0,0,recvTotal,1);
         $('saveBtn').disabled=true;
         setRecvState('rx','Recebendo');
@@ -601,6 +608,13 @@
     $('recvCount').textContent=got+' / '+recvTotal;
     $('recvLeft').textContent=(recvTotal-got);
     $('recvPct').textContent=Math.round(got/recvTotal*100)+'%';
+    if(!recvStart) recvStart=Date.now();
+    var el=(Date.now()-recvStart)/1000;
+    if(el>0.8 && got>1){
+      var rate=got/el, kbs=rate*recvChunk/1024, eta=rate>0?(recvTotal-got)/rate:0;
+      $('recvRate').hidden=false;
+      $('recvRate').innerHTML=rate.toFixed(1)+' blocos/s · '+kbs.toFixed(1)+' KB/s · falta <b>~'+fmtTime(eta)+'</b>';
+    }
     beep(880,0.03); buzz(18);
     if(got===recvTotal){ complete(); }
   }
@@ -613,6 +627,7 @@
     $('recvPlaceholder').innerHTML='<div class="big" aria-hidden="true">✓</div>Arquivo completo — toque em <b>Salvar arquivo</b>';
     setRecvState('done','Completo');
     $('saveBtn').disabled=false;
+    if(recvStart){ $('recvRate').hidden=false; $('recvRate').innerHTML='✓ completo em <b>'+fmtTime((Date.now()-recvStart)/1000)+'</b>'; }
     beep(1320,0.18); buzz([40,40,90]);
   }
 
