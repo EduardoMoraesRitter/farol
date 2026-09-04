@@ -280,8 +280,9 @@
       </div>
       <div class="meters">
         <div class="meter state" id="recvStateM"><div class="k">Estado</div><div class="v small" id="recvState">Aguardando</div></div>
-        <div class="meter"><div class="k">QR vistos</div><div class="v" id="recvSeen">0</div></div>
         <div class="meter"><div class="k">Recebidos</div><div class="v" id="recvCount">—</div></div>
+        <div class="meter"><div class="k">Faltam</div><div class="v" id="recvLeft">—</div></div>
+        <div class="meter"><div class="k">Repetidos</div><div class="v" id="recvDup">0</div></div>
       </div>
     </div>
   </section>
@@ -419,7 +420,7 @@
 
   /* ================= RECEIVER ================= */
   var video=$('video'), scanCanvas=$('scanCanvas'), sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
-  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0;
+  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0, dupCount=0;
   var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
   var camSelect=$('camSelect'), reticle=$('reticle');
 
@@ -455,7 +456,7 @@
       stream=s; video.srcObject=s; video.style.display='block';
       $('recvPlaceholder').style.display='none';
       video.play();
-      codesSeen=0; $('recvSeen').textContent='0';
+      codesSeen=0;
       setRecvState('rx','Procurando… ('+engineName+')');
       // iPhone: não dá pra controlar foco, mas zoom ajuda a afastar além da distância mínima de foco
       try{
@@ -493,7 +494,7 @@
   }
 
   function gotCode(text){
-    codesSeen++; $('recvSeen').textContent=codesSeen;
+    codesSeen++;
     reticle.classList.add('hit');
     if(!recvBuf){
       $('syncBanner').style.display='block';
@@ -548,13 +549,15 @@
         $('syncBanner').style.display='none';
         $('recvMeta').classList.add('show');
         $('recvCount').textContent='0 / '+recvTotal;
+        $('recvLeft').textContent=recvTotal; dupCount=0; $('recvDup').textContent='0';
         progCanvas.width=recvTotal; pctx.clearRect(0,0,recvTotal,1);
         $('saveBtn').disabled=true;
         setRecvState('rx','Recebendo');
       }
       return;
     }
-    if(!recvBuf || recvSet.has(index)) return;
+    if(!recvBuf) return;
+    if(recvSet.has(index)){ dupCount++; $('recvDup').textContent=dupCount; return; } // já veio: ignora
     var off=(index-1)*recvChunk;
     if(off>=recvSize) return;
     recvBuf.set(payload.subarray(0, Math.min(payload.length, recvSize-off)), off);
@@ -563,6 +566,7 @@
     pctx.fillStyle=col; pctx.fillRect(index-1,0,1,1);
     var got=recvSet.size;
     $('recvCount').textContent=got+' / '+recvTotal;
+    $('recvLeft').textContent=(recvTotal-got);
     $('recvPct').textContent=Math.round(got/recvTotal*100)+'%';
     beep(880,0.03); buzz(18);
     if(got===recvTotal){ complete(); }
