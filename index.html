@@ -458,6 +458,7 @@
   /* ================= RECEIVER ================= */
   var video=$('video'), scanCanvas=$('scanCanvas'), sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
   var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0, codesSeen=0, dupCount=0, recvGz=0, recvOrig=0, recvStart=0;
+  var readTimes=[]; // timestamps de leituras, pra medir QR/s do aparelho
   var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
   var camSelect=$('camSelect'), reticle=$('reticle');
 
@@ -493,7 +494,7 @@
       stream=s; video.srcObject=s; video.style.display='block';
       $('recvPlaceholder').style.display='none';
       video.play();
-      codesSeen=0;
+      codesSeen=0; readTimes=[];
       setRecvState('rx','Procurando… ('+engineName+')');
       // iPhone: não dá pra controlar foco, mas zoom ajuda a afastar além da distância mínima de foco
       try{
@@ -533,9 +534,17 @@
   function gotCode(text){
     codesSeen++;
     reticle.classList.add('hit');
+    var now=Date.now(); readTimes.push(now);
+    while(readTimes.length && now-readTimes[0]>2000) readTimes.shift();
     if(!recvBuf){
       $('syncBanner').style.display='block';
-      $('syncTxt').textContent='✓ sincronizado ('+engineName+')';
+      var span=(now-readTimes[0])/1000, rps=span>=1?(readTimes.length-1)/span:0;
+      if(rps>0){
+        var fps=Math.max(2,Math.min(15,Math.round(rps)));
+        $('syncTxt').innerHTML='✓ seu aparelho lê ~'+rps.toFixed(0)+' QR/s → use <b>'+fps+' fps</b> no transmissor';
+      } else {
+        $('syncTxt').textContent='✓ sincronizado ('+engineName+')';
+      }
       setRecvState('rx','Sincronizado ('+engineName+')');
     }
     handlePacket(text);
