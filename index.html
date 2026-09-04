@@ -225,6 +225,9 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
         Ligar câmera
       </button>
+      <div class="filemeta" id="syncBanner" style="background:var(--ok-soft);border-color:var(--ok)">
+        <div class="row"><span class="k">Sincronização</span><span class="v" id="syncTxt" style="color:var(--ok)">—</span></div>
+      </div>
       <div class="filemeta" id="recvMeta">
         <div class="row"><span class="k">Arquivo</span><span class="v" id="rName">—</span></div>
         <div class="row"><span class="k">Tamanho</span><span class="v" id="rSize">—</span></div>
@@ -319,7 +322,7 @@
       $('fileMeta').textContent=fmtBytes(fileBytes.length);
       frames=null; buildFrames();
       playBtn.disabled=false;
-      renderFrame(0);
+      renderFrame(0); setSendState('','Pronto');
       sendPlaceholder.style.display='none'; qrImg.style.display='block';
     };
     rd.readAsArrayBuffer(f);
@@ -376,6 +379,14 @@
     var m=$('sendStateM'); m.className='meter state'+(cls?' '+cls:''); $('sendState').textContent=txt;
   }
   playBtn.onclick=function(){ if(playTimer) stopPlay(); else startPlay(); };
+
+  // QR de sincronização (mostrado antes de escolher arquivo)
+  function showSyncQR(){
+    qrImg.src=qrDataUrl('FAROL-SYNC'); qrImg.style.display='block';
+    sendPlaceholder.style.display='none';
+    $('sendFrame').textContent='sync'; setSendState('rx','Sincronizando');
+  }
+  showSyncQR();
 
   /* ================= RECEIVER ================= */
   var video=$('video'), scanCanvas=$('scanCanvas'), sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
@@ -438,8 +449,12 @@
 
   function gotCode(text){
     codesSeen++; $('recvSeen').textContent=codesSeen;
-    if(!recvBuf) setRecvState('rx','Lendo… ('+engineName+')');
     reticle.classList.add('hit');
+    if(!recvBuf){
+      $('syncBanner').style.display='block';
+      $('syncTxt').textContent='✓ sincronizado ('+engineName+')';
+      setRecvState('rx','Sincronizado ('+engineName+')');
+    }
     handlePacket(text);
   }
   function scanLoop(){
@@ -484,6 +499,7 @@
         recvName=meta.name; recvSize=meta.size; recvTotal=meta.total; recvChunk=meta.chunk;
         recvBuf=new Uint8Array(recvSize); recvSet=new Set();
         $('rName').textContent=recvName; $('rSize').textContent=fmtBytes(recvSize);
+        $('syncBanner').style.display='none';
         $('recvMeta').classList.add('show');
         $('recvCount').textContent='0 / '+recvTotal;
         progCanvas.width=recvTotal; pctx.clearRect(0,0,recvTotal,1);
