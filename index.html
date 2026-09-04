@@ -95,6 +95,8 @@
   input[type="range"]{width:100%;accent-color:var(--accent);height:22px;cursor:pointer}
   select{width:100%;font-family:var(--sans);font-size:.9rem;color:var(--text);background:var(--surface-2);
     border:1px solid var(--border);border-radius:9px;padding:9px 10px;cursor:pointer}
+  input[type=text]{width:100%;font-family:var(--mono);font-size:.85rem;color:var(--text);background:var(--surface-2);
+    border:1px solid var(--border);border-radius:9px;padding:9px 10px}
 
   .drop{border:1.5px dashed var(--border);border-radius:12px;padding:22px 16px;text-align:center;
     cursor:pointer;transition:border-color .15s,background .15s;background:var(--surface-2)}
@@ -219,6 +221,10 @@
         <span class="lab">A partir do bloco <span class="val" id="startBlockVal">1 / 1</span></span>
         <input type="range" id="startBlock" min="1" max="1" step="1" value="1">
       </label>
+      <label class="field" id="onlyWrap" hidden>
+        <span class="lab">Só estes blocos (ex.: 5, 20-25)</span>
+        <input type="text" id="onlyBlocks" placeholder="vazio = todos" inputmode="numeric">
+      </label>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn" id="playBtn" disabled>
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
@@ -288,6 +294,7 @@
         <div class="progtop"><span class="lab">Blocos recebidos</span><span class="pct" id="recvPct">0%</span></div>
         <canvas id="progCanvas" height="1" width="100"></canvas>
         <div class="progsub" id="recvRate" hidden></div>
+        <div class="progsub" id="recvMissing" hidden></div>
       </div>
       <div class="meters">
         <div class="meter state" id="recvStateM"><div class="k">Estado</div><div class="v small" id="recvState">Aguardando</div></div>
@@ -399,14 +406,29 @@
     }
     $('sendBlocks').textContent=total;
     var sb=$('startBlock'); sb.min=1; sb.max=total; sb.value=1; startBlock=1;
-    $('startBlockVal').textContent='1 / '+total; $('startWrap').hidden=false;
+    $('startBlockVal').textContent='1 / '+total; $('startWrap').hidden=false; $('onlyWrap').hidden=false;
     rebuildSequence();
+  }
+  function parseBlocks(str,total){
+    if(!str) return null;
+    var set=[];
+    str.split(',').forEach(function(part){
+      part=part.trim(); if(!part) return;
+      var m=part.split('-');
+      if(m.length===2){ var a=parseInt(m[0],10),b=parseInt(m[1],10);
+        if(!isNaN(a)&&!isNaN(b)) for(var i=Math.min(a,b);i<=Math.max(a,b);i++) if(i>=1&&i<=total) set.push(i); }
+      else { var n=parseInt(part,10); if(n>=1&&n<=total) set.push(n); }
+    });
+    return set.length?set:null;
   }
   function rebuildSequence(){
     if(!frames) return;
     var total=frames.length-1;
+    var only=parseBlocks(($('onlyBlocks').value||'').trim(), total);
+    var list=only;
+    if(!list){ list=[]; for(var b=startBlock;b<=total;b++) list.push(b); }
     sequence=[0]; // sempre reenvia o metadados (sync) na frente
-    for(var b=startBlock;b<=total;b++){ if(b>startBlock && (b-startBlock)%12===0) sequence.push(0); sequence.push(b); }
+    for(var i=0;i<list.length;i++){ if(i>0 && i%12===0) sequence.push(0); sequence.push(list[i]); }
     seqPos=0;
   }
   function renderFrame(idx){
@@ -442,10 +464,11 @@
     rebuildSequence(); if(!playTimer) renderFrame(sequence[0]);
   };
   $('resetBtn').onclick=function(){
-    startBlock=1; $('startBlock').value=1;
+    startBlock=1; $('startBlock').value=1; $('onlyBlocks').value='';
     $('startBlockVal').textContent='1 / '+(frames?frames.length-1:1);
     rebuildSequence(); renderFrame(sequence[0]);
   };
+  $('onlyBlocks').oninput=function(){ rebuildSequence(); if(!playTimer) renderFrame(sequence[0]); };
 
   // QR de sincronização (mostrado antes de escolher arquivo)
   function showSyncQR(){
@@ -473,6 +496,17 @@
   function buzz(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
 
   function setRecvState(cls,txt){ var m=$('recvStateM'); m.className='meter state'+(cls?' '+cls:''); $('recvState').textContent=txt; }
+  function updateMissing(){
+    var el=$('recvMissing'); if(!recvSet){ el.hidden=true; return; }
+    var miss=recvTotal-recvSet.size;
+    if(miss<=0){ el.hidden=true; return; }
+    if(miss>120){ el.hidden=false; el.textContent='Faltam '+miss+' blocos (a lista aparece quando faltar pouco)'; return; }
+    var arr=[]; for(var i=1;i<=recvTotal;i++) if(!recvSet.has(i)) arr.push(i);
+    var out=[], s=arr[0], p=arr[0];
+    for(var k=1;k<arr.length;k++){ if(arr[k]===p+1){ p=arr[k]; } else { out.push(s===p?(''+s):(s+'-'+p)); s=p=arr[k]; } }
+    out.push(s===p?(''+s):(s+'-'+p));
+    el.hidden=false; el.innerHTML='Faltam: <b>'+out.join(', ')+'</b>';
+  }
   function showErr(t){ var e=$('recvErr'); if(t){e.textContent=t;e.classList.add('show');} else e.classList.remove('show'); }
 
   $('startCam').onclick=function(){ startCamera(camSelect.value&&camSelect.value.length>20?camSelect.value:null); };
@@ -598,7 +632,7 @@
         $('recvMeta').classList.add('show');
         $('recvCount').textContent='0 / '+recvTotal;
         $('recvLeft').textContent=recvTotal; dupCount=0; $('recvDup').textContent='0';
-        recvStart=0; $('recvRate').hidden=true;
+        recvStart=0; $('recvRate').hidden=true; $('recvMissing').hidden=true;
         progCanvas.width=recvTotal; pctx.clearRect(0,0,recvTotal,1);
         $('saveBtn').disabled=true;
         setRecvState('rx','Recebendo');
@@ -624,6 +658,7 @@
       $('recvRate').hidden=false;
       $('recvRate').innerHTML=rate.toFixed(1)+' blocos/s · '+kbs.toFixed(1)+' KB/s · falta <b>~'+fmtTime(eta)+'</b>';
     }
+    updateMissing();
     beep(880,0.03); buzz(18);
     if(got===recvTotal){ complete(); }
   }
@@ -654,6 +689,11 @@
 
   // tudo definido: no celular, abre já na aba Receber (câmera)
   if(isMobile) setMode(false);
+
+  // avisa antes de recarregar/sair no meio de uma recepção (evita perder progresso num pull-to-refresh)
+  window.addEventListener('beforeunload', function(e){
+    if(recvBuf && recvSet && recvSet.size>0 && recvSet.size<recvTotal){ e.preventDefault(); e.returnValue=''; }
+  });
 })();
 </script>
 </body>
