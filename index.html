@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Farol — transferência por QR</title>
+<meta name="description" content="Transfira arquivos entre telas por QR animado, sem rede. Uma tela pisca os códigos, a câmera do outro aparelho lê.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#EAEEF1; --surface:#FFFFFF; --surface-2:#E4E9ED; --border:#CDD5DC;
+    --text:#141A20; --muted:#5A6672; --faint:#8A96A2;
+    --accent:#0E7490; --accent-ink:#FFFFFF; --accent-soft:rgba(14,116,144,.10);
+    --ok:#15803D; --ok-soft:rgba(21,128,61,.12);
+    --warn:#B45309; --warn-soft:rgba(180,83,9,.12);
+    --miss:#B91C1C;
+    --shadow:0 1px 2px rgba(20,26,32,.06),0 8px 24px rgba(20,26,32,.06);
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0D1217; --surface:#151C23; --surface-2:#1D262F; --border:#2A343E;
+      --text:#E7ECF1; --muted:#94A2AF; --faint:#66737F;
+      --accent:#22B8CF; --accent-ink:#06121A; --accent-soft:rgba(34,184,207,.14);
+      --ok:#4ADE80; --ok-soft:rgba(74,222,128,.14);
+      --warn:#FBBF24; --warn-soft:rgba(251,191,36,.14);
+      --miss:#F87171;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0D1217; --surface:#151C23; --surface-2:#1D262F; --border:#2A343E;
+    --text:#E7ECF1; --muted:#94A2AF; --faint:#66737F;
+    --accent:#22B8CF; --accent-ink:#06121A; --accent-soft:rgba(34,184,207,.14);
+    --ok:#4ADE80; --ok-soft:rgba(74,222,128,.14);
+    --warn:#FBBF24; --warn-soft:rgba(251,191,36,.14);
+    --miss:#F87171;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.5;
+    -webkit-font-smoothing:antialiased;padding:clamp(14px,3vw,32px)}
+  .wrap{max-width:960px;margin:0 auto}
+
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .beacon{width:11px;height:11px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 0 var(--accent);animation:pulse 2.4s ease-out infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 var(--accent-soft)}70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  h1{font-size:1.5rem;font-weight:700;letter-spacing:-.02em;margin:0}
+  .tag{color:var(--muted);font-size:.9rem;margin:2px 0 20px;max-width:70ch}
+  .tag b{color:var(--text);font-weight:600}
+
+  .modes{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:11px;padding:4px;gap:4px;margin-bottom:22px}
+  .modes button{font-family:var(--sans);font-size:.92rem;font-weight:600;color:var(--muted);
+    background:transparent;border:0;padding:9px 20px;border-radius:8px;cursor:pointer;
+    display:flex;align-items:center;gap:8px;transition:color .15s}
+  .modes button svg{width:16px;height:16px}
+  .modes button[aria-selected="true"]{background:var(--surface);color:var(--accent);box-shadow:var(--shadow)}
+
+  .grid{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}
+  @media (max-width:720px){.grid{grid-template-columns:1fr}}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:var(--shadow)}
+  .panel-pad{padding:18px}
+  .eyebrow{font-size:.72rem;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--faint);margin:0 0 14px}
+
+  label.field{display:block;margin-bottom:16px}
+  label.field:last-child{margin-bottom:0}
+  .field .lab{display:flex;justify-content:space-between;align-items:baseline;font-size:.82rem;
+    font-weight:500;color:var(--muted);margin-bottom:7px}
+  .field .val{font-family:var(--mono);font-size:.82rem;color:var(--accent);font-weight:600}
+  input[type="range"]{width:100%;accent-color:var(--accent);height:22px;cursor:pointer}
+  select{width:100%;font-family:var(--sans);font-size:.9rem;color:var(--text);background:var(--surface-2);
+    border:1px solid var(--border);border-radius:9px;padding:9px 10px;cursor:pointer}
+
+  .drop{border:1.5px dashed var(--border);border-radius:12px;padding:22px 16px;text-align:center;
+    cursor:pointer;transition:border-color .15s,background .15s;background:var(--surface-2)}
+  .drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+  .drop .ico{font-size:1.5rem;line-height:1}
+  .drop .t{font-weight:600;font-size:.92rem;margin-top:8px}
+  .drop .s{color:var(--muted);font-size:.8rem;margin-top:3px}
+  .filechip{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:10px;padding:10px 12px;margin-top:12px}
+  .filechip .nm{font-weight:600;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .filechip .mt{font-family:var(--mono);font-size:.76rem;color:var(--muted);white-space:nowrap}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;
+    font-family:var(--sans);font-size:.95rem;font-weight:600;padding:12px 16px;border-radius:10px;
+    border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);cursor:pointer;
+    transition:filter .15s,opacity .15s}
+  .btn:hover{filter:brightness(1.06)}
+  .btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+  .btn.ghost{background:transparent;color:var(--accent)}
+  .btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  .btn svg{width:17px;height:17px}
+
+  .stage{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+    background:var(--surface-2);border-radius:11px;overflow:hidden;position:relative}
+  #qrImg{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;
+    background:#fff;display:none}
+  #video{width:100%;height:100%;object-fit:cover;display:none}
+  #scanCanvas{display:none}
+  .stage .placeholder{color:var(--faint);text-align:center;padding:24px;font-size:.9rem}
+  .stage .placeholder .big{font-size:2rem;margin-bottom:8px}
+  .reticle{position:absolute;inset:12%;border:2px solid var(--accent);border-radius:12px;
+    opacity:0;pointer-events:none;transition:opacity .12s}
+  .reticle.hit{opacity:.9}
+
+  .meters{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .meter{flex:1;min-width:88px;background:var(--surface);border:1px solid var(--border);
+    border-radius:11px;padding:11px 13px}
+  .meter .k{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .meter .v{font-family:var(--mono);font-size:1.15rem;font-weight:600;font-variant-numeric:tabular-nums;
+    margin-top:3px}
+  .meter .v.small{font-size:.95rem}
+  .meter.state .v{color:var(--muted)}
+  .meter.state.tx .v{color:var(--warn)} .meter.state.rx .v{color:var(--accent)}
+  .meter.state.done .v{color:var(--ok)}
+
+  .progwrap{margin-top:14px}
+  .progtop{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+  .progtop .lab{font-size:.78rem;color:var(--muted);font-weight:500}
+  .progtop .pct{font-family:var(--mono);font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+  #progCanvas{width:100%;height:14px;border-radius:7px;image-rendering:pixelated;
+    background:var(--surface-2);border:1px solid var(--border);display:block}
+
+  .filemeta{margin-top:14px;padding:13px;background:var(--accent-soft);border-radius:11px;
+    border:1px solid var(--border);display:none}
+  .filemeta.show{display:block}
+  .filemeta .row{display:flex;justify-content:space-between;gap:12px;font-size:.85rem;padding:2px 0}
+  .filemeta .row .k{color:var(--muted)} .filemeta .row .v{font-family:var(--mono);font-weight:500}
+
+  .hint{font-size:.8rem;color:var(--muted);margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+  .hint b{color:var(--text);font-weight:600}
+  .err{color:var(--miss);font-size:.82rem;margin-top:10px;font-weight:500;display:none}
+  .err.show{display:block}
+  footer{max-width:960px;margin:26px auto 0;color:var(--faint);font-size:.76rem;text-align:center}
+  [hidden]{display:none!important}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){.beacon{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><span class="beacon" aria-hidden="true"></span><h1>Farol</h1></div>
+  </header>
+  <p class="tag">Manda arquivo de uma tela pra outra por <b>QR animado</b>. Uma tela pisca os códigos, a câmera do outro aparelho lê. Sem rede, sem cabo, sem nuvem — o dado viaja pela luz.</p>
+
+  <div class="modes" role="tablist" aria-label="Modo">
+    <button id="mSend" role="tab" aria-selected="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8z"/></svg>
+      Enviar
+    </button>
+    <button id="mRecv" role="tab" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      Receber
+    </button>
+  </div>
+
+  <!-- ENVIAR -->
+  <section id="sendView" class="grid">
+    <div class="panel panel-pad">
+      <p class="eyebrow">Transmissor</p>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Escolher arquivo">
+        <div class="ico" aria-hidden="true">📄</div>
+        <div class="t">Escolher arquivo</div>
+        <div class="s">clique ou arraste aqui</div>
+        <input type="file" id="file" hidden>
+      </div>
+      <div id="fileChip" class="filechip" hidden>
+        <span class="nm" id="fileName">—</span><span class="mt" id="fileMeta"></span>
+      </div>
+
+      <div style="margin-top:16px">
+        <label class="field">
+          <span class="lab">Bytes por quadro <span class="val" id="chunkVal">300</span></span>
+          <input type="range" id="chunk" min="100" max="800" step="20" value="300">
+        </label>
+        <label class="field">
+          <span class="lab">Quadros por segundo <span class="val" id="fpsVal">8</span></span>
+          <input type="range" id="fps" min="2" max="15" step="1" value="8">
+        </label>
+      </div>
+
+      <button class="btn" id="playBtn" disabled style="margin-top:4px">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <span id="playLbl">Transmitir</span>
+      </button>
+
+      <p class="hint">Quanto <b>maior</b> bytes por quadro, mais rápido — mas o QR fica denso e a câmera pode não ler. Se o outro lado usar webcam de PC, baixe pra ~200 e reduza os quadros.</p>
+    </div>
+
+    <div class="panel panel-pad">
+      <div class="stage">
+        <img id="qrImg" alt="Código QR sendo transmitido">
+        <div class="placeholder" id="sendPlaceholder"><div class="big" aria-hidden="true">📡</div>Escolha um arquivo pra começar a transmitir</div>
+      </div>
+      <div class="meters">
+        <div class="meter state" id="sendStateM"><div class="k">Estado</div><div class="v small" id="sendState">Parado</div></div>
+        <div class="meter"><div class="k">Quadro</div><div class="v" id="sendFrame">—</div></div>
+        <div class="meter"><div class="k">Blocos</div><div class="v" id="sendBlocks">—</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RECEBER -->
+  <section id="recvView" class="grid" hidden>
+    <div class="panel panel-pad">
+      <p class="eyebrow">Receptor</p>
+      <label class="field">
+        <span class="lab">Câmera</span>
+        <select id="camSelect"><option>Liberar câmera…</option></select>
+      </label>
+      <button class="btn ghost" id="startCam" style="margin-bottom:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        Ligar câmera
+      </button>
+      <div class="filemeta" id="recvMeta">
+        <div class="row"><span class="k">Arquivo</span><span class="v" id="rName">—</span></div>
+        <div class="row"><span class="k">Tamanho</span><span class="v" id="rSize">—</span></div>
+      </div>
+      <button class="btn ok" id="saveBtn" disabled style="margin-top:14px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Salvar arquivo
+      </button>
+      <p class="err" id="recvErr"></p>
+      <p class="hint">Aponte a câmera pra tela que está transmitindo. Segure firme (apoie o aparelho). Ele preenche os blocos que faltam a cada passada — <b>não precisa pegar tudo de primeira</b>.</p>
+    </div>
+
+    <div class="panel panel-pad">
+      <div class="stage">
+        <video id="video" playsinline muted></video>
+        <canvas id="scanCanvas"></canvas>
+        <div class="reticle" id="reticle"></div>
+        <div class="placeholder" id="recvPlaceholder"><div class="big" aria-hidden="true">🎥</div>Ligue a câmera e mire na tela transmissora</div>
+      </div>
+      <div class="progwrap">
+        <div class="progtop"><span class="lab">Blocos recebidos</span><span class="pct" id="recvPct">0%</span></div>
+        <canvas id="progCanvas" height="1" width="100"></canvas>
+      </div>
+      <div class="meters">
+        <div class="meter state" id="recvStateM"><div class="k">Estado</div><div class="v small" id="recvState">Aguardando</div></div>
+        <div class="meter"><div class="k">Recebidos</div><div class="v" id="recvCount">—</div></div>
+      </div>
+    </div>
+  </section>
+</div>
+<footer>Farol · transferência óptica por QR · funciona offline, o arquivo nunca sai dos seus aparelhos</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<script>
+(function(){
+  "use strict";
+  var $=function(id){return document.getElementById(id)};
+  var HEADER=4, EC='M';
+
+  function fmtBytes(n){
+    if(n<1024)return n+' B';
+    if(n<1048576)return (n/1024).toFixed(1)+' KB';
+    return (n/1048576).toFixed(2)+' MB';
+  }
+
+  /* ---------- mode switch ---------- */
+  var mSend=$('mSend'), mRecv=$('mRecv'), sendView=$('sendView'), recvView=$('recvView');
+  function setMode(send){
+    mSend.setAttribute('aria-selected', send?'true':'false');
+    mRecv.setAttribute('aria-selected', send?'false':'true');
+    sendView.hidden=!send; recvView.hidden=send;
+    if(send){ stopCamera(); } else { stopPlay(); }
+  }
+  mSend.onclick=function(){setMode(true)};
+  mRecv.onclick=function(){setMode(false)};
+
+  /* ================= SENDER ================= */
+  var fileBytes=null, fileName='', frames=null, sequence=null, playTimer=null, seqPos=0;
+  var chunkEl=$('chunk'), fpsEl=$('fps'), chunkVal=$('chunkVal'), fpsVal=$('fpsVal');
+  var playBtn=$('playBtn'), playLbl=$('playLbl'), qrImg=$('qrImg'), sendPlaceholder=$('sendPlaceholder');
+
+  chunkEl.oninput=function(){ chunkVal.textContent=chunkEl.value; frames=null; if(fileBytes){ buildFrames(); renderFrame(0); } };
+  fpsEl.oninput=function(){ fpsVal.textContent=fpsEl.value; if(playTimer){ stopPlay(true); startPlay(); } };
+
+  var drop=$('drop'), fileInput=$('file');
+  drop.onclick=function(){fileInput.click()};
+  drop.onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){e.preventDefault();fileInput.click();} };
+  drop.ondragover=function(e){e.preventDefault();drop.classList.add('over')};
+  drop.ondragleave=function(){drop.classList.remove('over')};
+  drop.ondrop=function(e){e.preventDefault();drop.classList.remove('over');
+    if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); };
+  fileInput.onchange=function(e){ if(e.target.files[0]) loadFile(e.target.files[0]); };
+
+  function loadFile(f){
+    fileName=f.name;
+    var rd=new FileReader();
+    rd.onload=function(ev){
+      fileBytes=new Uint8Array(ev.target.result);
+      $('fileChip').hidden=false;
+      $('fileName').textContent=fileName;
+      $('fileMeta').textContent=fmtBytes(fileBytes.length);
+      frames=null; buildFrames();
+      playBtn.disabled=false;
+      renderFrame(0);
+      sendPlaceholder.style.display='none'; qrImg.style.display='block';
+    };
+    rd.readAsArrayBuffer(f);
+  }
+
+  function qrDataUrl(bytes){
+    qrcode.stringToBytes=function(s){return s;}; // raw bytes straight into byte mode
+    var qr=qrcode(0, EC);
+    qr.addData(bytes);
+    qr.make();
+    return qr.createDataURL(4,10);
+  }
+  function makeFrame(index, payload){
+    var buf=new Uint8Array(HEADER+payload.length);
+    new DataView(buf.buffer).setUint32(0,index,true);
+    buf.set(payload,HEADER);
+    return buf;
+  }
+  function buildFrames(){
+    var chunk=parseInt(chunkEl.value,10);
+    var total=Math.max(1,Math.ceil(fileBytes.length/chunk));
+    var meta={name:fileName,size:fileBytes.length,total:total,chunk:chunk};
+    var metaBytes=new TextEncoder().encode(JSON.stringify(meta));
+    frames=new Array(total+1);
+    frames[0]=qrDataUrl(makeFrame(0,metaBytes));
+    for(var i=1;i<=total;i++){
+      var off=(i-1)*chunk;
+      var part=fileBytes.subarray(off, Math.min(off+chunk, fileBytes.length));
+      frames[i]=qrDataUrl(makeFrame(i,part));
+    }
+    sequence=[0];
+    for(var b=1;b<=total;b++){ if(b>1 && (b-1)%12===0) sequence.push(0); sequence.push(b); }
+    $('sendBlocks').textContent=total;
+  }
+  function renderFrame(idx){
+    if(!frames) return;
+    qrImg.src=frames[idx];
+    $('sendFrame').textContent=(idx===0?'meta':idx+' / '+(frames.length-1));
+  }
+  function startPlay(){
+    if(!frames) return;
+    seqPos=0;
+    var interval=1000/parseInt(fpsEl.value,10);
+    playTimer=setInterval(function(){
+      renderFrame(sequence[seqPos]);
+      seqPos=(seqPos+1)%sequence.length;
+    }, interval);
+    playLbl.textContent='Parar';
+    playBtn.querySelector('svg').innerHTML='<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>';
+    setSendState('tx','Transmitindo');
+  }
+  function stopPlay(keepState){
+    if(playTimer){ clearInterval(playTimer); playTimer=null; }
+    playLbl.textContent='Transmitir';
+    playBtn.querySelector('svg').innerHTML='<path d="M8 5v14l11-7z"/>';
+    if(!keepState) setSendState('','Parado');
+  }
+  function setSendState(cls,txt){
+    var m=$('sendStateM'); m.className='meter state'+(cls?' '+cls:''); $('sendState').textContent=txt;
+  }
+  playBtn.onclick=function(){ if(playTimer) stopPlay(); else startPlay(); };
+
+  /* ================= RECEIVER ================= */
+  var video=$('video'), scanCanvas=$('scanCanvas'), sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
+  var stream=null, scanning=false, recvBuf=null, recvSet=null, recvTotal=0, recvChunk=0, recvName='', recvSize=0;
+  var progCanvas=$('progCanvas'), pctx=progCanvas.getContext('2d');
+  var camSelect=$('camSelect'), reticle=$('reticle');
+
+  function setRecvState(cls,txt){ var m=$('recvStateM'); m.className='meter state'+(cls?' '+cls:''); $('recvState').textContent=txt; }
+  function showErr(t){ var e=$('recvErr'); if(t){e.textContent=t;e.classList.add('show');} else e.classList.remove('show'); }
+
+  $('startCam').onclick=function(){ startCamera(camSelect.value&&camSelect.value.length>20?camSelect.value:null); };
+  camSelect.onchange=function(){ if(stream) startCamera(camSelect.value); };
+
+  function startCamera(deviceId){
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+      showErr('Este navegador não permite acessar a câmera (precisa de HTTPS).'); return;
+    }
+    showErr('');
+    stopCamera();
+    var constraints=deviceId?{video:{deviceId:{exact:deviceId}}}:{video:{facingMode:{ideal:'environment'}}};
+    navigator.mediaDevices.getUserMedia(constraints).then(function(s){
+      stream=s; video.srcObject=s; video.style.display='block';
+      $('recvPlaceholder').style.display='none';
+      video.play();
+      setRecvState('rx','Procurando…');
+      return navigator.mediaDevices.enumerateDevices();
+    }).then(function(devs){
+      var cams=devs.filter(function(d){return d.kind==='videoinput'});
+      camSelect.innerHTML='';
+      cams.forEach(function(c,i){ var o=document.createElement('option'); o.value=c.deviceId;
+        o.textContent=c.label||('Câmera '+(i+1)); camSelect.appendChild(o); });
+      var cur=stream.getVideoTracks()[0];
+      if(cur&&cur.getSettings){ var sid=cur.getSettings().deviceId; if(sid) camSelect.value=sid; }
+      scanning=true; requestAnimationFrame(scanLoop);
+    }).catch(function(err){
+      showErr('Não consegui abrir a câmera: '+err.message+'. Verifique a permissão.');
+      setRecvState('','Aguardando');
+    });
+  }
+  function stopCamera(){
+    scanning=false;
+    if(stream){ stream.getTracks().forEach(function(t){t.stop()}); stream=null; }
+    video.style.display='none';
+  }
+
+  function scanLoop(){
+    if(!scanning) return;
+    if(video.readyState===video.HAVE_ENOUGH_DATA){
+      var vw=video.videoWidth, vh=video.videoHeight;
+      var scale=Math.min(1, 900/Math.max(vw,vh));
+      var w=Math.round(vw*scale), h=Math.round(vh*scale);
+      if(scanCanvas.width!==w){ scanCanvas.width=w; scanCanvas.height=h; }
+      sctx.drawImage(video,0,0,w,h);
+      var img=sctx.getImageData(0,0,w,h);
+      var code=jsQR(img.data,w,h,{inversionAttempts:'dontInvert'});
+      if(code && code.binaryData && code.binaryData.length>HEADER){
+        reticle.classList.add('hit');
+        handlePacket(code.binaryData);
+      } else {
+        reticle.classList.remove('hit');
+      }
+    }
+    requestAnimationFrame(scanLoop);
+  }
+
+  function handlePacket(bin){
+    var arr=Uint8Array.from(bin);
+    var index=new DataView(arr.buffer,arr.byteOffset,arr.byteLength).getUint32(0,true);
+    var payload=arr.subarray(HEADER);
+    if(index===0){
+      var meta;
+      try{ meta=JSON.parse(new TextDecoder().decode(payload)); }catch(e){ return; }
+      if(meta.name!==recvName || meta.size!==recvSize){
+        recvName=meta.name; recvSize=meta.size; recvTotal=meta.total; recvChunk=meta.chunk;
+        recvBuf=new Uint8Array(recvSize); recvSet=new Set();
+        $('rName').textContent=recvName; $('rSize').textContent=fmtBytes(recvSize);
+        $('recvMeta').classList.add('show');
+        $('recvCount').textContent='0 / '+recvTotal;
+        progCanvas.width=recvTotal; pctx.clearRect(0,0,recvTotal,1);
+        $('saveBtn').disabled=true;
+        setRecvState('rx','Recebendo');
+      }
+      return;
+    }
+    if(!recvBuf || recvSet.has(index)) return;
+    var off=(index-1)*recvChunk;
+    if(off>=recvSize) return;
+    recvBuf.set(payload.subarray(0, Math.min(payload.length, recvSize-off)), off);
+    recvSet.add(index);
+    var col=getComputedStyle(document.documentElement).getPropertyValue('--ok').trim()||'#15803D';
+    pctx.fillStyle=col; pctx.fillRect(index-1,0,1,1);
+    var got=recvSet.size;
+    $('recvCount').textContent=got+' / '+recvTotal;
+    $('recvPct').textContent=Math.round(got/recvTotal*100)+'%';
+    if(got===recvTotal){ complete(); }
+  }
+
+  function complete(){
+    scanning=false;
+    if(stream){ stream.getTracks().forEach(function(t){t.stop()}); }
+    video.style.display='none';
+    $('recvPlaceholder').style.display='block';
+    $('recvPlaceholder').innerHTML='<div class="big" aria-hidden="true">✓</div>Arquivo completo — toque em <b>Salvar arquivo</b>';
+    setRecvState('done','Completo');
+    $('saveBtn').disabled=false;
+  }
+
+  $('saveBtn').onclick=function(){
+    if(!recvBuf) return;
+    var blob=new Blob([recvBuf], {type:'application/octet-stream'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download=recvName||'arquivo';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1500);
+  };
+})();
+</script>
+</body>
+</html>
