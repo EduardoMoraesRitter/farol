@@ -65,7 +65,20 @@
   .modes button[aria-selected="true"]{background:var(--surface);color:var(--accent);box-shadow:var(--shadow)}
 
   .grid{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}
-  @media (max-width:720px){.grid{grid-template-columns:1fr}}
+  @media (max-width:720px){
+    body{padding:12px}
+    .grid{grid-template-columns:1fr;gap:12px}
+    .stagePanel{order:-1}                 /* câmera/QR primeiro no celular */
+    .panel-pad{padding:14px}
+    .modes{width:100%}
+    .modes button{flex:1;justify-content:center;padding:11px 8px}
+    h1{font-size:1.35rem}
+    .tag{font-size:.86rem;margin-bottom:16px}
+    .stage{aspect-ratio:3/4}              /* câmera mais alta, melhor pra mirar */
+    .meters{gap:8px}
+    .meter{min-width:0;padding:9px 10px}
+    .meter .v{font-size:1rem}
+  }
 
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;
     box-shadow:var(--shadow)}
@@ -200,7 +213,7 @@
       <p class="hint">Quanto <b>maior</b> bytes por quadro, mais rápido — mas o QR fica denso e a câmera pode não ler. Se o outro lado usar webcam de PC, baixe pra ~200 e reduza os quadros.</p>
     </div>
 
-    <div class="panel panel-pad">
+    <div class="panel panel-pad stagePanel">
       <div class="stage">
         <img id="qrImg" alt="Código QR sendo transmitido">
         <div class="placeholder" id="sendPlaceholder"><div class="big" aria-hidden="true">📡</div>Escolha um arquivo pra começar a transmitir</div>
@@ -234,7 +247,9 @@
       </div>
       <div class="filemeta" id="recvMeta">
         <div class="row"><span class="k">Arquivo</span><span class="v" id="rName">—</span></div>
+        <div class="row"><span class="k">Tipo</span><span class="v" id="rType">—</span></div>
         <div class="row"><span class="k">Tamanho</span><span class="v" id="rSize">—</span></div>
+        <div class="row"><span class="k">Blocos</span><span class="v" id="rBlocks">—</span></div>
       </div>
       <button class="btn ok" id="saveBtn" disabled style="margin-top:14px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
@@ -244,7 +259,7 @@
       <p class="hint"><b>iPhone não foca de perto</b> (limitação do Safari). Segure <b>mais longe</b>, uns 30–40 cm, e use o <b>Zoom</b> acima pra aproximar — assim ele foca. Tela transmissora com brilho no máximo. Ele preenche os blocos que faltam a cada passada, não precisa pegar tudo de primeira.</p>
     </div>
 
-    <div class="panel panel-pad">
+    <div class="panel panel-pad stagePanel">
       <div class="stage">
         <video id="video" playsinline muted></video>
         <canvas id="scanCanvas"></canvas>
@@ -298,9 +313,12 @@
   }
   mSend.onclick=function(){setMode(true)};
   mRecv.onclick=function(){setMode(false)};
+  // No celular, já abre na câmera (Receber) — é o uso mais comum no mobile
+  var isMobile=(window.matchMedia&&window.matchMedia('(max-width:720px)').matches)||/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
+  if(isMobile) setMode(false);
 
   /* ================= SENDER ================= */
-  var fileBytes=null, fileName='', frames=null, sequence=null, playTimer=null, seqPos=0;
+  var fileBytes=null, fileName='', fileType='', frames=null, sequence=null, playTimer=null, seqPos=0;
   var chunkEl=$('chunk'), fpsEl=$('fps'), chunkVal=$('chunkVal'), fpsVal=$('fpsVal');
   var playBtn=$('playBtn'), playLbl=$('playLbl'), qrImg=$('qrImg'), sendPlaceholder=$('sendPlaceholder');
 
@@ -317,7 +335,7 @@
   fileInput.onchange=function(e){ if(e.target.files[0]) loadFile(e.target.files[0]); };
 
   function loadFile(f){
-    fileName=f.name;
+    fileName=f.name; fileType=f.type||'';
     var rd=new FileReader();
     rd.onload=function(ev){
       fileBytes=new Uint8Array(ev.target.result);
@@ -343,7 +361,7 @@
   function buildFrames(){
     var chunk=parseInt(chunkEl.value,10);
     var total=Math.max(1,Math.ceil(fileBytes.length/chunk));
-    var meta={name:fileName,size:fileBytes.length,total:total,chunk:chunk};
+    var meta={name:fileName,type:fileType,size:fileBytes.length,total:total,chunk:chunk};
     var metaBytes=new TextEncoder().encode(JSON.stringify(meta));
     frames=new Array(total+1);
     frames[0]=qrDataUrl('0|'+bytesToB64(metaBytes));
@@ -518,6 +536,7 @@
         recvName=meta.name; recvSize=meta.size; recvTotal=meta.total; recvChunk=meta.chunk;
         recvBuf=new Uint8Array(recvSize); recvSet=new Set();
         $('rName').textContent=recvName; $('rSize').textContent=fmtBytes(recvSize);
+        $('rType').textContent=meta.type||'arquivo'; $('rBlocks').textContent=recvTotal;
         $('syncBanner').style.display='none';
         $('recvMeta').classList.add('show');
         $('recvCount').textContent='0 / '+recvTotal;
